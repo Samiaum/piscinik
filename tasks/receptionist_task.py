@@ -3,8 +3,7 @@ from typing import Annotated
 from datetime import datetime
 from pydantic import Field
 from livekit.agents.llm import function_tool
-from livekit.agents.voice import Agent, RunContext
-from livekit.plugins import openai
+from livekit.agents import Agent, RunContext
 from .global_functions import (
     get_date_today, 
     get_user_info, 
@@ -54,11 +53,6 @@ class Receptionist(Agent):
             ❌ Mauvais : "Pourriez-vous me rappeler votre nom..." (si déjà connu)
             
             DÈS IDENTIFICATION → TRANSFERT IMMÉDIAT !""",
-            tts=openai.TTS(
-                voice="fable",
-                model="gpt-4o-mini-tts",
-                instructions="Parlez en français avec un accent naturel et chaleureux. TOUJOURS vouvoyer le client avec 'vous'. Soyez efficace pour l'orientation vers les bons services."
-            ),
             tools=[
                 update_information, 
                 get_user_info, 
