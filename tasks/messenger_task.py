@@ -4,8 +4,7 @@ from typing import Annotated
 from pydantic import Field
 from supabase import AsyncClient, create_async_client
 from livekit.agents.llm import function_tool
-from livekit.agents.voice import Agent, RunContext
-from livekit.plugins import openai  # ✅ Changé : cartesia → openai
+from livekit.agents import Agent, RunContext
 from .global_functions import (
     get_date_today,
     transfer_to_receptionist,
@@ -46,11 +45,6 @@ class Messenger(Agent):
             Collectez le nom, numéro de téléphone et le message du client. Si possible, demandez aussi
             des informations sur leur piscine (type, taille) pour que notre équipe puisse mieux les aider.
             Confirmez les détails, surtout le numéro de téléphone. Soyez bref et professionnel.""",
-            tts=openai.TTS(  # ✅ Changé : cartesia.TTS → openai.TTS
-                voice="fable",  # ✅ Changé : voix élégante et raffinée pour service client
-                model="gpt-4o-mini-tts",  # ✅ Ajouté : modèle OpenAI TTS
-                instructions="Parlez en français avec un accent naturel et professionnel. TOUJOURS vouvoyer le client avec 'vous'. Ton courtois et aimable pour la prise de messages."  # ✅ Ajouté : instructions français
-            ),
             tools=[
                 update_information,
                 transfer_to_receptionist,
