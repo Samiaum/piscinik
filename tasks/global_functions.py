@@ -13,10 +13,8 @@ async def log_action(
     action_type: Annotated[str, Field(description="Type d'action : 'appointment_scheduled', 'appointment_cancelled', 'message_sent', 'technical_advice', etc.")],
     details: Annotated[str, Field(description="Détails de l'action au format JSON ou texte descriptif")],
     context: RunContext,
-) -> str:
-    """
-    Enregistre une action dans l'historique de session pour éviter les redondances.
-    """
+) -> dict:
+    """Enregistre une action dans l'historique de session pour éviter les redondances."""
     session_history = context.userdata["session_history"]
     
     action_entry = {
@@ -36,20 +34,18 @@ async def log_action(
         session_history.actions = session_history.actions[-10:]
     
     print(f"DEBUG: Action logged - {agent_name}: {action_type}")
-    return f"Action enregistrée : {action_type}"
+    return {"message": f"Action enregistrée : {action_type}"}
 
 @function_tool()
 async def get_recent_actions(
     context: RunContext,
     limit: Annotated[int, Field(description="Nombre d'actions récentes à récupérer")] = 3,
-) -> str:
-    """
-    Récupère les actions récentes de la session pour contextualiser la conversation.
-    """
+) -> dict:
+    """Récupère les actions récentes de la session pour contextualiser la conversation."""
     session_history = context.userdata["session_history"]
     
     if not session_history.actions:
-        return "Aucune action récente dans cette session."
+        return {"summary": "Aucune action récente dans cette session."}
     
     # Récupérer les dernières actions
     recent_actions = session_history.actions[-limit:]
@@ -60,38 +56,35 @@ async def get_recent_actions(
         time_str = timestamp.strftime("%H:%M")
         summary += f"- {time_str} | {action['agent']} : {action['action']} - {action['details']}\n"
     
-    return summary.strip()
+    return {"summary": summary.strip()}
 
 @function_tool()
 async def check_recent_appointment(
     context: RunContext,
-) -> str:
-    """
-    Vérifie si un rendez-vous a été planifié récemment dans cette session.
-    Retourne les détails du dernier RDV ou 'None' si aucun.
-    """
+) -> dict:
+    """Vérifie si un rendez-vous a été planifié récemment dans cette session et retourne le dernier RDV s'il existe."""
     session_history = context.userdata["session_history"]
     
     # Chercher la dernière action de type appointment
     for action in reversed(session_history.actions):
         if action["action"] in ["appointment_scheduled", "appointment_cancelled", "appointment_rescheduled"]:
-            return f"Dernier RDV : {action['action']} - {action['details']} (à {datetime.fromisoformat(action['timestamp']).strftime('%H:%M')})"
-    
-    return "None"
+            return {
+                "appointment": f"Dernier RDV : {action['action']} - {action['details']} (à {datetime.fromisoformat(action['timestamp']).strftime('%H:%M')})"
+            }
+
+    return {"appointment": None}
 
 @function_tool()
 async def clear_session_history(
     context: RunContext,
-) -> str:
-    """
-    Remet à zéro l'historique de session (utile pour les tests ou nouveau client).
-    """
+) -> dict:
+    """Remet à zéro l'historique de session (utile pour les tests ou nouveau client)."""
     session_history = context.userdata["session_history"]
     session_history.actions = []
     session_history.last_agent = None
     session_history.last_action_time = None
     
-    return "Historique de session réinitialisé."
+    return {"message": "Historique de session réinitialisé."}
 
 # ===== FONCTIONS EXISTANTES =====
 
@@ -106,11 +99,8 @@ async def update_information(
     ],
     info: Annotated[str, Field(description="La nouvelle information fournie par l'utilisateur")],
     context: RunContext,
-) -> str:
-    """
-    Met à jour les informations enregistrées sur l'utilisateur.
-    RETOURNE un message contextuel selon l'agent qui l'utilise.
-    """
+) -> dict:
+    """Met à jour les informations enregistrées sur l'utilisateur et renvoie un message contextuel."""
     userinfo = context.userdata["userinfo"]
     session_history = context.userdata["session_history"]
     
@@ -142,10 +132,12 @@ async def update_information(
         time_diff = (now - action_time).total_seconds()
         
         if time_diff < 120:  # Moins de 2 minutes
-            return f"Parfait ! Votre rendez-vous pour {recent_appointment['details']} est confirmé avec votre email {info} !"
+            return {
+                "message": f"Parfait ! Votre rendez-vous pour {recent_appointment['details']} est confirmé avec votre email {info} !"
+            }
     
     # Message par défaut (seulement si pas de contexte RDV récent)
-    return f"Parfait, votre {field.replace('_', ' ')} a été enregistré !"
+    return {"message": f"Parfait, votre {field.replace('_', ' ')} a été enregistré !"}
 
 
 
@@ -159,24 +151,21 @@ async def get_user_info(
         ),
     ],
     context: RunContext,
-) -> str:
-    """
-    Récupère les informations enregistrées sur l'utilisateur.
-    Les champs disponibles sont : nom, numéro de téléphone, email, type de piscine, et taille de piscine.
-    """
+) -> dict:
+    """Récupère les informations enregistrées sur l'utilisateur."""
     userinfo = context.userdata["userinfo"]
     if field == "name" and userinfo.name:
-        return userinfo.name
+        return {"value": userinfo.name}
     elif field == "phone_number" and userinfo.phone:
-        return userinfo.phone
+        return {"value": userinfo.phone}
     elif field == "email" and userinfo.email:
-        return userinfo.email
+        return {"value": userinfo.email}
     elif field == "pool_type" and userinfo.pool_type:
-        return userinfo.pool_type
+        return {"value": userinfo.pool_type}
     elif field == "pool_size" and userinfo.pool_size:
-        return userinfo.pool_size
+        return {"value": userinfo.pool_size}
     else:
-        return "Information non fournie"
+        return {"value": None}
 
 @function_tool()
 async def transfer_to_receptionist(context: RunContext) -> tuple[Agent, str]:
@@ -218,18 +207,13 @@ async def transfer_to_technical_expert(context: RunContext) -> tuple[Agent, str]
     return context.userdata["agents"].technical_expert, "Je vous transfère vers notre expert technique !"
 
 @function_tool()
-async def get_date_today() -> str:
-    """
-    Récupère la date actuelle RÉELLE au format ISO (YYYY-MM-DD).
-    """
-    return date.today().isoformat()  # Retourne la vraie date système
+async def get_date_today() -> dict:
+    """Récupère la date actuelle RÉELLE au format ISO (YYYY-MM-DD)."""
+    return {"date": date.today().isoformat()}
 
 @function_tool()
-async def get_current_datetime_info() -> str:
-    """
-    Récupère les informations complètes sur la date et heure actuelles RÉELLES.
-    Utile pour calculer les dates relatives comme "demain", "après-demain".
-    """
+async def get_current_datetime_info() -> dict:
+    """Récupère les informations complètes sur la date et l'heure actuelles RÉELLES."""
     now = datetime.now()
     today = now.date()  # Date système réelle
     
@@ -247,17 +231,14 @@ Pour les rendez-vous, utilisez le format ISO 8601 UTC :
 - Exemple demain 10h : {(today + timedelta(days=1)).isoformat()}T08:00:00.000Z (10h Paris = 8h UTC)
 - Exemple après-demain 14h : {(today + timedelta(days=2)).isoformat()}T12:00:00.000Z (14h Paris = 12h UTC)"""
     
-    return date_info
+    return {"info": date_info}
 
 @function_tool()
 async def convert_french_time_to_iso(
     date_description: Annotated[str, Field(description="Description de la date en français (ex: 'demain', 'mardi', '17 juin')")],
     time_description: Annotated[str, Field(description="Heure souhaitée (ex: '10h', '14h30', 'matin', 'après-midi')")],
-) -> str:
-    """
-    Convertit une date et heure en français vers le format ISO 8601 UTC pour Cal.com.
-    Utilise la date système RÉELLE comme référence.
-    """
+) -> dict:
+    """Convertit une date/heure en français vers le format ISO 8601 UTC pour Cal.com."""
     today = date.today()  # Date système RÉELLE
     current_weekday = today.weekday()  # 0=lundi, 1=mardi, ..., 6=dimanche
     
@@ -352,6 +333,8 @@ async def convert_french_time_to_iso(
     # Format ISO 8601 UTC pour Cal.com
     iso_datetime = f"{target_date.isoformat()}T{hour_utc:02d}:00:00.000Z"
     
-    return f"""Date convertie : {iso_datetime}
-Détail : {target_date.strftime('%A %d %B %Y')} à {hour_utc + 2}h (heure française)
-Format pour Cal.com : {iso_datetime}"""
+    return {
+        "iso": iso_datetime,
+        "detail": target_date.strftime('%A %d %B %Y'),
+        "message": f"Date convertie : {iso_datetime}\nDétail : {target_date.strftime('%A %d %B %Y')} à {hour_utc + 2}h (heure française)\nFormat pour Cal.com : {iso_datetime}"
+    }

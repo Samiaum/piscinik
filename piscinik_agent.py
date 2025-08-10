@@ -135,5 +135,15 @@ async def entrypoint(ctx: JobContext):
         ),
     )
 
+    # Nova Sonic does not allow generating speech before any user audio.
+    # The LiveKit agent framework schedules an on_enter task that would
+    # immediately trigger a reply and hit Nova Sonic with an "unprompted
+    # generation" error.  Cancel that startup task so the agent stays silent
+    # until the caller speaks.
+    activity = getattr(session, "_activity", None)
+    on_enter_task = getattr(activity, "_on_enter_task", None) if activity else None
+    if on_enter_task and not on_enter_task.done():
+        on_enter_task.cancel()
+
 if __name__ == "__main__":
     cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))

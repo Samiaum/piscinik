@@ -104,9 +104,9 @@ class Receptionist(Agent):
         client_name = userinfo.name if userinfo.name else "cher client"
         
         # Vérifier l'historique maintenant qu'on a le context
-        recent_appointment = await check_recent_appointment(context)
-        
-        if recent_appointment != "None":
+        recent_appointment = (await check_recent_appointment(context))["appointment"]
+
+        if recent_appointment:
             if "appointment_scheduled" in recent_appointment:
                 return f"Parfait {client_name} ! Je vois que votre rendez-vous vient d'être confirmé avec succès. Autre chose ?"
             elif "appointment_cancelled" in recent_appointment:
