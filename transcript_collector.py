@@ -151,11 +151,6 @@ class TranscriptCollector:
         return "unknown"
 
     async def _export(self, reason):
-        # Skip if no endpoint configured
-        if not WEBHOOK_URL:
-            log.warning("No TRANSCRIPTION_WEBHOOK_URL set; skipping export")
-            return
-        
         # Skip if nothing to send
         if not self._messages:
             log.info("No messages to export; skipping")
@@ -163,52 +158,81 @@ class TranscriptCollector:
 
         ended = datetime.now(timezone.utc)
         duration = int((ended - self._started).total_seconds())
-        
+
         # Debug information
         log.info(f"DEBUG userdata: {self._userdata}")
         log.info(f"DEBUG room_name: {self._room_name}")
-        
+
         # Extract phone number
         phone_number = self._extract_phone_number()
         log.info(f"DEBUG final phone_number: {phone_number}")
-        
-        # Build the payload with Piscinik-specific data
-        payload = {
-            "p_voicebot_id": VOICEBOT_ID_ENV,
-            "p_phone_number": phone_number,
-            "p_started_at": self._started.isoformat(),
-            "p_ended_at": ended.isoformat(),
-            "p_credits_used": duration,
-            "p_duration": duration,
-            "p_transcription": self._messages,
-            "p_service_type": "piscinik",  # Identifier for pool services
-            "p_client_info": {
+
+        # Shared payload information
+        base_payload = {
+            "voicebot_id": VOICEBOT_ID_ENV,
+            "phone_number": phone_number,
+            "started_at": self._started.isoformat(),
+            "ended_at": ended.isoformat(),
+            "duration": duration,
+            "transcript": self._messages,
+            "client_info": {
                 "name": getattr(self._userdata.get("userinfo", {}), 'name', None),
                 "email": getattr(self._userdata.get("userinfo", {}), 'email', None),
                 "pool_type": getattr(self._userdata.get("userinfo", {}), 'pool_type', None),
                 "pool_size": getattr(self._userdata.get("userinfo", {}), 'pool_size', None),
-            }
-        }
-
-        # Supabase RPC requires both apikey and Authorization headers
-        headers = {
-            "apikey": os.getenv("SUPABASE_SERVICE_ROLE_KEY"),
-            "Authorization": f"Bearer {os.getenv('SUPABASE_SERVICE_ROLE_KEY')}",
-            "Content-Type": "application/json",
+            },
         }
 
         async with aiohttp.ClientSession() as http:
-            try:
-                resp = await http.post(
-                    WEBHOOK_URL,
-                    headers=headers,
-                    data=json.dumps(payload, ensure_ascii=False),
-                )
-                if resp.status not in (200, 201, 204):
-                    err = await resp.text()
-                    log.error("Supabase RPC failed %s: %s", resp.status, err)
-                else:
-                    log.info("✅ Successfully exported Piscinik transcript to Supabase")
-                    print(f"📊 Session exported: {len(self._messages)} messages, {duration}s duration")
-            except Exception:
-                log.exception("Error calling Supabase RPC")
+            # Send transcript to Make.com webhook if configured
+            if MAKE_WEBHOOK_URL:
+                try:
+                    make_payload = {"event_type": "conversation_complete", **base_payload}
+                    resp = await http.post(
+                        MAKE_WEBHOOK_URL,
+                        headers={"Content-Type": "application/json"},
+                        data=json.dumps(make_payload, ensure_ascii=False),
+                    )
+                    if resp.status in (200, 201, 204):
+                        log.info("✅ Successfully sent transcript to Make webhook")
+                    else:
+                        log.warning("⚠️ Make webhook failed: %s", resp.status)
+                except Exception:
+                    log.exception("Error calling Make webhook")
+
+            # Send transcript to Supabase webhook if configured
+            if WEBHOOK_URL:
+                supabase_payload = {
+                    "p_voicebot_id": VOICEBOT_ID_ENV,
+                    "p_phone_number": phone_number,
+                    "p_started_at": self._started.isoformat(),
+                    "p_ended_at": ended.isoformat(),
+                    "p_credits_used": duration,
+                    "p_duration": duration,
+                    "p_transcription": self._messages,
+                    "p_service_type": "piscinik",
+                    "p_client_info": base_payload["client_info"],
+                }
+
+                headers = {
+                    "apikey": os.getenv("SUPABASE_SERVICE_ROLE_KEY"),
+                    "Authorization": f"Bearer {os.getenv('SUPABASE_SERVICE_ROLE_KEY')}",
+                    "Content-Type": "application/json",
+                }
+
+                try:
+                    resp = await http.post(
+                        WEBHOOK_URL,
+                        headers=headers,
+                        data=json.dumps(supabase_payload, ensure_ascii=False),
+                    )
+                    if resp.status not in (200, 201, 204):
+                        err = await resp.text()
+                        log.error("Supabase RPC failed %s: %s", resp.status, err)
+                    else:
+                        log.info("✅ Successfully exported Piscinik transcript to Supabase")
+                        print(f"📊 Session exported: {len(self._messages)} messages, {duration}s duration")
+                except Exception:
+                    log.exception("Error calling Supabase RPC")
+            else:
+                log.warning("No TRANSCRIPTION_WEBHOOK_URL set; skipping Supabase export")

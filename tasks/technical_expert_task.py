@@ -2,8 +2,7 @@
 from typing import Annotated
 from pydantic import Field
 from livekit.agents.llm import function_tool
-from livekit.agents.voice import Agent, RunContext
-from livekit.plugins import openai  # ✅ Changé : cartesia → openai
+from livekit.agents import Agent, RunContext
 from .global_functions import (
     get_date_today,
     transfer_to_receptionist,
@@ -30,11 +29,6 @@ class TechnicalExpert(Agent):
             - Toute question technique sur les piscines
             
             Utilisez TOUJOURS technical_advice_rag avant de répondre à une question technique.""",
-            tts=openai.TTS(  # ✅ Changé : cartesia.TTS → openai.TTS
-                voice="nova",  # ✅ Changé : voix claire et professionnelle pour expert technique
-                model="gpt-4o-mini-tts",  # ✅ Ajouté : modèle OpenAI TTS
-                instructions="Parlez en français avec un accent naturel et professionnel. TOUJOURS vouvoyer le client avec 'vous'. Ton expert et compétent pour les conseils techniques."  # ✅ Ajouté : instructions français
-            ),
             tools=[
                 update_information,
                 get_user_info,
@@ -46,11 +40,9 @@ class TechnicalExpert(Agent):
         )
 
     async def on_enter(self) -> None:
-        await self.session.generate_reply(
-            instructions=f"""Allez directement au but. Demandez simplement quelle est leur question technique sur leur piscine.
-            Soyez concis et efficace.
-            Informations client : {self.session.userdata["userinfo"].json()}"""
-        )
+        # L'expert technique reste silencieux jusqu'à ce que le client pose
+        # sa question afin d'éviter toute génération non sollicitée.
+        pass
 
     @function_tool()
     async def technical_advice_rag(

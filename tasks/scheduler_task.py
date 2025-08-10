@@ -7,8 +7,7 @@ import aiohttp
 from pydantic import Field
 
 from livekit.agents.llm import function_tool
-from livekit.agents.voice import Agent, RunContext
-from livekit.plugins import openai
+from livekit.agents import Agent, RunContext
 
 from .global_functions import (
     get_date_today,
@@ -61,11 +60,6 @@ class Scheduler(Agent):
                             - entretien-piscine : Entretien régulier
                             - reparation-piscine : Réparation
                             - installation-equipement : Installation d'équipement""",
-            tts=openai.TTS(
-                voice="verse",
-                model="gpt-4o-mini-tts",
-                instructions="Parlez en français avec un accent naturel et efficace. TOUJOURS vouvoyer le client avec 'vous'. Ton professionnel et organisé pour la gestion des rendez-vous."
-            ),
             tools=[
                 update_information,
                 get_user_info,
@@ -83,49 +77,11 @@ class Scheduler(Agent):
         self._service_requested = service
 
     async def on_enter(self) -> None:
+        """Prepare event IDs but stay silent until the caller speaks."""
         self._event_ids = self.session.userdata["event_ids"]
-        
-        # Récupérer les informations déjà collectées
-        userinfo = self.session.userdata["userinfo"]
-        client_name = userinfo.name if userinfo.name else ""
-        
-        print(f"DEBUG: Event IDs disponibles: {self._event_ids}")
-        print(f"DEBUG: Informations client disponibles - Nom: {userinfo.name}, Email: {userinfo.email}, Service: {self._service_requested}")
-        
-        # 🎯 CORRECTION 1 : Vérifier ce qui manque vraiment
-        missing_info = []
-        if not userinfo.name:
-            missing_info.append("votre nom")
-        if not userinfo.email:
-            missing_info.append("votre email")
-        
-        # 🎯 CORRECTION 2 : Message adaptatif sans redemander ce qu'on a
-        if userinfo.name and userinfo.email:
-            # On a tout - aller directement à la planification
-            service_label = self._service_requested.replace('-', ' ') if self._service_requested != 'planifier' else 'votre service piscine'
-            await self.session.generate_reply(
-                instructions=f"""Parfait {client_name} ! 
-                
-                Pour votre {service_label}, quand souhaitez-vous votre rendez-vous ?
-                Quelle date et quelle heure vous conviennent le mieux ?
-                
-                (Exemples : "demain matin", "mardi 14h", "mercredi après-midi")"""
-            )
-        elif userinfo.name and not userinfo.email:
-            # On a le nom, manque juste l'email
-            await self.session.generate_reply(
-                instructions=f"""Parfait {client_name} ! 
-                
-                Pour finaliser votre rendez-vous, j'ai juste besoin de votre adresse email."""
-            )
-        elif missing_info:
-            # 🎯 CORRECTION 3 : Demander seulement ce qui manque
-            missing_text = " et ".join(missing_info)
-            await self.session.generate_reply(
-                instructions=f"""Pour organiser votre rendez-vous, j'ai besoin de {missing_text}.
-                
-                Pouvez-vous me donner ces informations ?"""
-            )
+        # Nova Sonic ne permet pas de générer une réponse vocale tant que le
+        # client n'a pas parlé. Le planificateur attend donc l'entrée
+        # utilisateur avant de formuler sa première réponse.
 
     async def send_request(
         self,
@@ -288,10 +244,10 @@ class Scheduler(Agent):
         try:
             # Convertir la date/heure française vers ISO 8601 UTC
             conversion_result = await convert_french_time_to_iso(date_description, time_description)
-            print(f"DEBUG: Conversion date: {conversion_result}")
-            
+            print(f"DEBUG: Conversion date: {conversion_result['message']}")
+
             # Extraire le format ISO de la conversion
-            iso_datetime = conversion_result.split("Format pour Cal.com : ")[1].strip()
+            iso_datetime = conversion_result["iso"]
             
             # Planifier le rendez-vous
             response = await self.send_request(
