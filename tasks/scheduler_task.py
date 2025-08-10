@@ -7,8 +7,7 @@ import aiohttp
 from pydantic import Field
 
 from livekit.agents.llm import function_tool
-from livekit.agents.voice import Agent, RunContext
-from livekit.plugins import openai
+from livekit.agents import Agent, RunContext
 
 from .global_functions import (
     get_date_today,
@@ -61,11 +60,6 @@ class Scheduler(Agent):
                             - entretien-piscine : Entretien régulier
                             - reparation-piscine : Réparation
                             - installation-equipement : Installation d'équipement""",
-            tts=openai.TTS(
-                voice="verse",
-                model="gpt-4o-mini-tts",
-                instructions="Parlez en français avec un accent naturel et efficace. TOUJOURS vouvoyer le client avec 'vous'. Ton professionnel et organisé pour la gestion des rendez-vous."
-            ),
             tools=[
                 update_information,
                 get_user_info,
@@ -288,10 +282,10 @@ class Scheduler(Agent):
         try:
             # Convertir la date/heure française vers ISO 8601 UTC
             conversion_result = await convert_french_time_to_iso(date_description, time_description)
-            print(f"DEBUG: Conversion date: {conversion_result}")
-            
+            print(f"DEBUG: Conversion date: {conversion_result['message']}")
+
             # Extraire le format ISO de la conversion
-            iso_datetime = conversion_result.split("Format pour Cal.com : ")[1].strip()
+            iso_datetime = conversion_result["iso"]
             
             # Planifier le rendez-vous
             response = await self.send_request(

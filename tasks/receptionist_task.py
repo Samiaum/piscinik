@@ -3,8 +3,7 @@ from typing import Annotated
 from datetime import datetime
 from pydantic import Field
 from livekit.agents.llm import function_tool
-from livekit.agents.voice import Agent, RunContext
-from livekit.plugins import openai
+from livekit.agents import Agent, RunContext
 from .global_functions import (
     get_date_today, 
     get_user_info, 
@@ -54,11 +53,6 @@ class Receptionist(Agent):
             ❌ Mauvais : "Pourriez-vous me rappeler votre nom..." (si déjà connu)
             
             DÈS IDENTIFICATION → TRANSFERT IMMÉDIAT !""",
-            tts=openai.TTS(
-                voice="fable",
-                model="gpt-4o-mini-tts",
-                instructions="Parlez en français avec un accent naturel et chaleureux. TOUJOURS vouvoyer le client avec 'vous'. Soyez efficace pour l'orientation vers les bons services."
-            ),
             tools=[
                 update_information, 
                 get_user_info, 
@@ -92,8 +86,11 @@ class Receptionist(Agent):
             "details": f"Accueil {client_name if client_name else 'nouveau client'}"
         }
         session_history.actions.append(action_entry)
-        
-        await self.session.generate_reply(instructions=greeting)
+        # Nova Sonic's realtime API does not allow generating speech before any
+        # user audio has been received. Calling generate_reply here would
+        # trigger an "unprompted generation" error at startup. Instead, the
+        # receptionist waits for the caller to speak first and will craft a
+        # greeting in response to the first user message.
 
     @function_tool()
     async def greet_with_context(
@@ -107,9 +104,9 @@ class Receptionist(Agent):
         client_name = userinfo.name if userinfo.name else "cher client"
         
         # Vérifier l'historique maintenant qu'on a le context
-        recent_appointment = await check_recent_appointment(context)
-        
-        if recent_appointment != "None":
+        recent_appointment = (await check_recent_appointment(context))["appointment"]
+
+        if recent_appointment:
             if "appointment_scheduled" in recent_appointment:
                 return f"Parfait {client_name} ! Je vois que votre rendez-vous vient d'être confirmé avec succès. Autre chose ?"
             elif "appointment_cancelled" in recent_appointment:

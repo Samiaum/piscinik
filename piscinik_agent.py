@@ -1,5 +1,6 @@
 # piscinik_agent.py
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from api_setup import setup_event_types
@@ -8,12 +9,17 @@ from pydantic import BaseModel
 from tasks import Messenger, Receptionist, Scheduler, TechnicalExpert
 from transcript_collector import TranscriptCollector  # Enhanced version with real-time logging
 from livekit.agents import (
+    Agent,
+    AgentSession,
+    AutoSubscribe,
     JobContext,
+    RoomInputOptions,
+    RoomOutputOptions,
     WorkerOptions,
     cli,
 )
-from livekit.agents.voice import Agent, AgentSession
-from livekit.plugins import cartesia, deepgram, openai, silero
+from livekit.plugins import aws
+import openai
 
 # Clean logging setup
 logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -54,6 +60,14 @@ class Agents:
         return Scheduler(service=service)
 
 load_dotenv()
+
+# Configuration AWS et OpenAI
+AWS_REGION = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
+VOICE_MODEL = os.getenv("NOVA_SONIC_VOICE", "ambre")
+MAX_TOKENS = int(os.getenv("MAX_TOKENS", "10000"))
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+openai.api_key = OPENAI_API_KEY
+
 logger = logging.getLogger("piscinik-scheduler")
 logger.setLevel(logging.INFO)
 
@@ -80,18 +94,15 @@ async def entrypoint(ctx: JobContext):
     print(f"🎯 Available Services: {list(event_ids.keys())}")
     print(f"🏊‍♂️ Pool Service Bot Ready")
     
-    # 3) Build the AgentSession
+    # 3) Build the AgentSession with AWS Nova Sonic
     session = AgentSession(
         userdata=userdata,
-        stt=deepgram.STT(
-            model="nova-2",
-            language="fr",  # Pour la reconnaissance vocale en français
-            smart_format=True,
-            interim_results=True,
+        llm=aws.realtime.RealtimeModel(
+            voice=VOICE_MODEL,
+            region=AWS_REGION,
+            tool_choice="auto",
+            max_tokens=MAX_TOKENS,
         ),
-        llm=openai.LLM(),
-        tts=cartesia.TTS(),
-        vad=silero.VAD.load(),
     )
     
     # 4) Connection event logging
@@ -113,11 +124,26 @@ async def entrypoint(ctx: JobContext):
     print("🚀 Piscinik Agent Ready - Real-time logging enabled")
     
     # 6) Connect to LiveKit and start the conversation
-    await ctx.connect()
+    await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
     await session.start(
         agent=userdata["agents"].receptionist,
         room=ctx.room,
+        room_input_options=RoomInputOptions(),
+        room_output_options=RoomOutputOptions(
+            audio_enabled=True,
+            transcription_enabled=True,
+        ),
     )
+
+    # Nova Sonic does not allow generating speech before any user audio.
+    # The LiveKit agent framework schedules an on_enter task that would
+    # immediately trigger a reply and hit Nova Sonic with an "unprompted
+    # generation" error.  Cancel that startup task so the agent stays silent
+    # until the caller speaks.
+    activity = getattr(session, "_activity", None)
+    on_enter_task = getattr(activity, "_on_enter_task", None) if activity else None
+    if on_enter_task and not on_enter_task.done():
+        on_enter_task.cancel()
 
 if __name__ == "__main__":
     cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
