@@ -56,12 +56,8 @@ class Messenger(Agent):
 
     async def on_enter(self) -> None:
         self._supabase = await SupabaseClient.initiate_supabase()
-        await self.session.generate_reply(
-            instructions=f"""Présentez-vous et demandez leur numéro de téléphone
-            s'il n'est pas déjà fourni. Ensuite, demandez quel message ils souhaitent laisser
-            pour Piscinik concernant leur piscine. Informations déjà collectées: 
-            {self.session.userdata["userinfo"].json()}"""
-        )
+        # Nova Sonic's realtime API interdit de parler avant l'audio du client.
+        # L'assistant attendra donc que l'utilisateur s'exprime avant de répondre.
 
     @function_tool()
     async def record_message(

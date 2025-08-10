@@ -40,11 +40,9 @@ class TechnicalExpert(Agent):
         )
 
     async def on_enter(self) -> None:
-        await self.session.generate_reply(
-            instructions=f"""Allez directement au but. Demandez simplement quelle est leur question technique sur leur piscine.
-            Soyez concis et efficace.
-            Informations client : {self.session.userdata["userinfo"].json()}"""
-        )
+        # L'expert technique reste silencieux jusqu'à ce que le client pose
+        # sa question afin d'éviter toute génération non sollicitée.
+        pass
 
     @function_tool()
     async def technical_advice_rag(

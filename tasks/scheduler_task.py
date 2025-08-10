@@ -77,49 +77,11 @@ class Scheduler(Agent):
         self._service_requested = service
 
     async def on_enter(self) -> None:
+        """Prepare event IDs but stay silent until the caller speaks."""
         self._event_ids = self.session.userdata["event_ids"]
-        
-        # Récupérer les informations déjà collectées
-        userinfo = self.session.userdata["userinfo"]
-        client_name = userinfo.name if userinfo.name else ""
-        
-        print(f"DEBUG: Event IDs disponibles: {self._event_ids}")
-        print(f"DEBUG: Informations client disponibles - Nom: {userinfo.name}, Email: {userinfo.email}, Service: {self._service_requested}")
-        
-        # 🎯 CORRECTION 1 : Vérifier ce qui manque vraiment
-        missing_info = []
-        if not userinfo.name:
-            missing_info.append("votre nom")
-        if not userinfo.email:
-            missing_info.append("votre email")
-        
-        # 🎯 CORRECTION 2 : Message adaptatif sans redemander ce qu'on a
-        if userinfo.name and userinfo.email:
-            # On a tout - aller directement à la planification
-            service_label = self._service_requested.replace('-', ' ') if self._service_requested != 'planifier' else 'votre service piscine'
-            await self.session.generate_reply(
-                instructions=f"""Parfait {client_name} ! 
-                
-                Pour votre {service_label}, quand souhaitez-vous votre rendez-vous ?
-                Quelle date et quelle heure vous conviennent le mieux ?
-                
-                (Exemples : "demain matin", "mardi 14h", "mercredi après-midi")"""
-            )
-        elif userinfo.name and not userinfo.email:
-            # On a le nom, manque juste l'email
-            await self.session.generate_reply(
-                instructions=f"""Parfait {client_name} ! 
-                
-                Pour finaliser votre rendez-vous, j'ai juste besoin de votre adresse email."""
-            )
-        elif missing_info:
-            # 🎯 CORRECTION 3 : Demander seulement ce qui manque
-            missing_text = " et ".join(missing_info)
-            await self.session.generate_reply(
-                instructions=f"""Pour organiser votre rendez-vous, j'ai besoin de {missing_text}.
-                
-                Pouvez-vous me donner ces informations ?"""
-            )
+        # Nova Sonic ne permet pas de générer une réponse vocale tant que le
+        # client n'a pas parlé. Le planificateur attend donc l'entrée
+        # utilisateur avant de formuler sa première réponse.
 
     async def send_request(
         self,
