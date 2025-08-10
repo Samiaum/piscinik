@@ -86,8 +86,11 @@ class Receptionist(Agent):
             "details": f"Accueil {client_name if client_name else 'nouveau client'}"
         }
         session_history.actions.append(action_entry)
-        
-        await self.session.generate_reply(instructions=greeting)
+        # Nova Sonic's realtime API does not allow generating speech before any
+        # user audio has been received. Calling generate_reply here would
+        # trigger an "unprompted generation" error at startup. Instead, the
+        # receptionist waits for the caller to speak first and will craft a
+        # greeting in response to the first user message.
 
     @function_tool()
     async def greet_with_context(
